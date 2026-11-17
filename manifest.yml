@@ -1,0 +1,112 @@
+modules:
+  rovo:agent:
+    - key: sevzero-sre-agent
+      name: SevZero SRE Agent
+      description: Autonomous SRE Incident Response Agent that correlates JSM alerts, Bitbucket commits, external Datadog/CloudWatch logs, and drafts Confluence RCAs.
+      prompt: >
+        You are SevZero, an Autonomous Site Reliability Engineering (SRE) Incident Response Agent.
+        When a user reports an incident (such as an issue in the Redis cache) and asks you to fetch logs and draft an RCA:
+        1. Call the `fetch-external-logs` action first (passing `serviceName` such as "redis-cache-cluster" or `incidentId`) to query Datadog (`https://api.datadoghq.com/api/v1/query`) and retrieve the Sev-1 error stack trace.
+        2. Immediately call the `draft-confluence-rca` action (passing the incident `summary` and the `logs` output from `fetch-external-logs`) to create the Root Cause Analysis (RCA) page in Confluence with sections for "Incident Summary", "Root Cause (from Datadog)", and "Remediation Steps".
+        3. Respond with the complete RCA breakdown ("Incident Summary", "Root Cause (from Datadog)", and "Remediation Steps") and the created Confluence page link/details.
+        Do not ask the user for additional parameters before invoking these actions; use sensible SRE defaults when any optional details are omitted.
+      conversationStarters:
+        - We have an incident in the Redis cache. Fetch the logs and draft an RCA.
+        - Check Datadog and CloudWatch logs for recent error spikes
+        - Draft a post-incident Root Cause Analysis (RCA) page in Confluence
+      actions:
+        - fetch-external-logs
+        - draft-confluence-rca
+
+  # rovo:action modules (declared under 'action' in the Forge Rovo manifest schema)
+  action:
+    - key: fetch-external-logs
+      name: Fetch External Datadog/CloudWatch Logs
+      function: fetchLogsFn
+      actionVerb: GET
+      description: >
+        Fetches external observability and Datadog error logs (https://api.datadoghq.com/api/v1/query)
+        and stack traces for a given serviceName or incidentId.
+      inputs:
+        serviceName:
+          title: Service Name
+          type: string
+          required: false
+          description: Name of the affected microservice or cache cluster (e.g., redis-cache-cluster).
+        incidentId:
+          title: Incident ID
+          type: string
+          required: false
+          description: Optional incident identifier (e.g., INC-REDIS-701).
+    - key: draft-confluence-rca
+      name: Draft Incident RCA in Confluence
+      function: draftRcaFn
+      actionVerb: GET
+      description: >
+        Creates a post-incident Root Cause Analysis (RCA) page in Confluence (POST /wiki/api/v2/pages)
+        with sections for Incident Summary, Root Cause (from Datadog), and Remediation Steps.
+      inputs:
+        summary:
+          title: Incident Summary
+          type: string
+          required: true
+          description: Summary of the incident and its impact.
+        logs:
+          title: Logs and Stack Trace
+          type: string
+          required: true
+          description: Error logs and stack trace fetched from the external logs MCP tool.
+        incidentId:
+          title: Incident ID
+          type: string
+          required: false
+          description: Optional incident identifier.
+        remediation:
+          title: Remediation Steps
+          type: string
+          required: false
+          description: Recommended remediation steps to prevent recurrence.
+
+  # rovo:mcp module (Model Context Protocol server exposing external log & RCA tools)
+  rovo:mcp:
+    - key: sevzero-external-logs-mcp
+      name: SevZero Telemetry MCP
+      tools:
+        - fetch-external-logs
+        - draft-confluence-rca
+
+  webtrigger:
+    - key: sevzero-agent-trigger
+      function: agentTriggerFn
+
+  function:
+    - key: draftRcaFn
+      handler: index.draftConfluenceRca
+    - key: fetchLogsFn
+      handler: index.fetchExternalLogs
+    - key: agentTriggerFn
+      handler: index.triggerSevZeroAgent
+
+permissions:
+  scopes:
+    - read:jira-work
+    - read:servicedesk-request
+    - write:confluence-content
+    - write:page:confluence
+    - read:page:confluence
+    - read:space:confluence
+    - read:source-code:jira-software
+    - read:devops-component-info:jira
+  external:
+    fetch:
+      backend:
+        - address: https://api.bitbucket.org
+        - address: https://api.datadoghq.com
+        - address: https://logs.amazonaws.com
+
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/be9bb44a-8691-464d-a525-7e11ce5be8e9

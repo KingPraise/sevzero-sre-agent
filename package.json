@@ -1,0 +1,11 @@
+{
+  "name": "sevzero-sre-agent",
+  "version": "1.2.3",
+  "description": "SevZero — Autonomous SRE Incident Response Agent built on Atlassian Forge & Rovo (Codegeist 2026)",
+  "main": "index.js",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "@forge/api": "^8.5.0"
+  }
+}
